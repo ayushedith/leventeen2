@@ -1,30 +1,52 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
-const generateQR = require('./generateQR');
+const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const QRCode = require('qrcode');
 
+// Setup
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ],
+  partials: [Partials.Channel]
 });
+
+const PREFIX = '!'; // Command prefix
 
 client.once('ready', () => {
-  console.log(`🤖  is online as ${client.user.tag}`);
+  console.log(`🤖 Logged in as ${client.user.tag}`);
+  client.user.setActivity('QR codes | !qr', { type: 'LISTENING' });
 });
 
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+// Message listener
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return; // Ignore bot messages
+  if (!message.content.startsWith(PREFIX)) return;
 
-  if (interaction.commandName === 'qr') {
-    const text = interaction.options.getString('text');
+  const [cmd, ...args] = message.content.slice(PREFIX.length).trim().split(/\s+/);
+
+  if (cmd === 'qr') {
+    const text = args.join(' ');
+    if (!text) return message.reply('❗ Please provide text to convert.');
+
     try {
-      const qrBuffer = await generateQR(text);
-      await interaction.reply({
+      const qrBuffer = await QRCode.toBuffer(text);
+      await message.reply({
         files: [{ attachment: qrBuffer, name: 'qr.png' }]
       });
     } catch (err) {
-      console.error(err);
-      await interaction.reply('❌ Error generating QR code.');
+      console.error('❌ QR generation failed:', err);
+      message.reply('❌ Could not generate QR code.');
     }
   }
+   else if (cmd === 'ping') {
+    const sent = await message.reply('🏓 Pinging...');
+    const latency = sent.createdTimestamp - message.createdTimestamp;
+    const apiLatency = Math.round(client.ws.ping);
+
+    sent.edit(`🏓 Pong! Latency: ${latency}ms | API: ${apiLatency}ms`);
+  }
 });
-console.log(process.env.DISCORD_TOKEN)
+
 client.login(process.env.DISCORD_TOKEN);
