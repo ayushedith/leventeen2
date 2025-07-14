@@ -1,8 +1,8 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
-const QRCode = require('qrcode');
+const fs = require('fs');
+const path = require('path');
+const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
 
-// Setup
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -12,40 +12,81 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-const PREFIX = '!'; // Command prefix
+const PREFIX = '!';
+client.commands = new Collection();
 
+// 🔁 Load all command files
+const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+for (const file of commandFiles) {
+  const command = require(`./commands/${file}`);
+  client.commands.set(command.name, command);
+}
+
+// 🤖 Bot ready
 client.once('ready', () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
-  client.user.setActivity('QR codes | !qr', { type: 'LISTENING' });
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  client.user.setActivity('QRs | !help', { type: 'LISTENING' });
 });
 
-// Message listener
+// 📩 Handle messages
 client.on('messageCreate', async (message) => {
-  if (message.author.bot) return; // Ignore bot messages
-  if (!message.content.startsWith(PREFIX)) return;
+  if (message.author.bot) return;
 
-  const [cmd, ...args] = message.content.slice(PREFIX.length).trim().split(/\s+/);
+  const isBoss = message.author.id === process.env.BOSS_ID;
+  const args = message.content.trim().split(/ +/);
+  const cmd = args.shift().toLowerCase();
 
-  if (cmd === 'qr') {
-    const text = args.join(' ');
-    if (!text) return message.reply('❗ Please provide text to convert.');
+  // 🟢 Normal commands with prefix
+  if (message.content.startsWith(PREFIX)) {
+    const commandName = cmd.slice(PREFIX.length);
+    const command = client.commands.get(commandName);
+    if (!command) return;
 
     try {
-      const qrBuffer = await QRCode.toBuffer(text);
-      await message.reply({
-        files: [{ attachment: qrBuffer, name: 'qr.png' }]
-      });
+      await command.execute(message, args);
     } catch (err) {
-      console.error('❌ QR generation failed:', err);
-      message.reply('❌ Could not generate QR code.');
+      console.error(`❌ Error in command ${commandName}:`, err);
+      message.reply('❌ Something went wrong.');
     }
   }
-   else if (cmd === 'ping') {
-    const sent = await message.reply('🏓 Pinging...');
-    const latency = sent.createdTimestamp - message.createdTimestamp;
-    const apiLatency = Math.round(client.ws.ping);
 
-    sent.edit(`🏓 Pong! Latency: ${latency}ms | API: ${apiLatency}ms`);
+  // 👑 Boss-only no-prefix QR shortcut
+  else if (isBoss) {
+  const text = [cmd, ...args].join(' ').trim();
+
+  // 🧠 Add filters to avoid replying to short/random messages
+  if (text.length < 5 && !text.startsWith('http')) return;
+
+  const qr = client.commands.get('qr');
+  if (!qr) return;
+  try {
+    await qr.execute(message, [text]);
+  } catch (err) {
+    console.error('❌ Boss QR failed:', err);
+  }
+}
+  // 🆘 Help command
+  else if (cmd === 'help') {
+    const help = client.commands.get('help');
+    if (help) {
+      try {
+        await help.execute(message);
+      } catch (err) {
+        console.error('❌ Help command failed:', err);
+      }
+    }
+  }
+
+  // 🏓 Ping command
+  else if (cmd === 'ping') {
+    const ping = client.commands.get('ping');
+    if (ping) {
+      try {
+        await ping.execute(message);
+      } catch (err) {
+        console.error('❌ Ping command failed:', err);
+      }
+    }
   }
 });
 
