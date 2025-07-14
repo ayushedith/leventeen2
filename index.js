@@ -15,77 +15,69 @@ const client = new Client({
 const PREFIX = '!';
 client.commands = new Collection();
 
-// 🔁 Load all command files
-const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+// 🧠 Global patch to disable reply ping
+client.on('messageCreate', (message) => {
+  const originalReply = message.reply.bind(message);
+  message.reply = (options) => {
+    if (typeof options === 'string') {
+      options = { content: options };
+    }
+    if (!options.allowedMentions) {
+      options.allowedMentions = { repliedUser: false };
+    }
+    return originalReply(options);
+  };
+});
+
+// 🔁 Load command files
+const commandFiles = fs.readdirSync(path.join(__dirname, 'commands')).filter(file => file.endsWith('.js'));
 for (const file of commandFiles) {
   const command = require(`./commands/${file}`);
   client.commands.set(command.name, command);
 }
 
-// 🤖 Bot ready
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   client.user.setActivity('QRs | !help', { type: 'LISTENING' });
 });
 
-// 📩 Handle messages
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   const isBoss = message.author.id === process.env.BOSS_ID;
-  const args = message.content.trim().split(/ +/);
-  const cmd = args.shift().toLowerCase();
+  const bossModeEnabled = process.env.BOSS_MODE?.toLowerCase() === 'true';
 
-  // 🟢 Normal commands with prefix
-  if (message.content.startsWith(PREFIX)) {
-    const commandName = cmd.slice(PREFIX.length);
+  const text = message.content.trim();
+
+  // 1️⃣ PREFIX commands
+  if (text.startsWith(PREFIX)) {
+    const args = text.slice(PREFIX.length).trim().split(/\s+/);
+    const commandName = args.shift().toLowerCase();
     const command = client.commands.get(commandName);
     if (!command) return;
 
     try {
       await command.execute(message, args);
     } catch (err) {
-      console.error(`❌ Error in command ${commandName}:`, err);
+      console.error(`❌ Error in !${commandName}:`, err);
       message.reply('❌ Something went wrong.');
     }
   }
 
-  // 👑 Boss-only no-prefix QR shortcut
-  else if (isBoss) {
-  const text = [cmd, ...args].join(' ').trim();
+  // 2️⃣ BOSS no-prefix commands
+  else if (isBoss && bossModeEnabled) {
+    const args = text.split(/\s+/);
+    const commandName = args.shift()?.toLowerCase();
+    if (!commandName || commandName.length < 2) return;
 
-  // 🧠 Add filters to avoid replying to short/random messages
-  if (text.length < 5 && !text.startsWith('http')) return;
+    const command = client.commands.get(commandName);
+    if (!command) return;
 
-  const qr = client.commands.get('qr');
-  if (!qr) return;
-  try {
-    await qr.execute(message, [text]);
-  } catch (err) {
-    console.error('❌ Boss QR failed:', err);
-  }
-}
-  // 🆘 Help command
-  else if (cmd === 'help') {
-    const help = client.commands.get('help');
-    if (help) {
-      try {
-        await help.execute(message);
-      } catch (err) {
-        console.error('❌ Help command failed:', err);
-      }
-    }
-  }
-
-  // 🏓 Ping command
-  else if (cmd === 'ping') {
-    const ping = client.commands.get('ping');
-    if (ping) {
-      try {
-        await ping.execute(message);
-      } catch (err) {
-        console.error('❌ Ping command failed:', err);
-      }
+    try {
+      await command.execute(message, args);
+    } catch (err) {
+      console.error(`❌ Boss command failed (${commandName}):`, err);
+      message.reply('❌ Something went wrong.');
     }
   }
 });
