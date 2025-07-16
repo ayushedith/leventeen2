@@ -9,8 +9,8 @@ async function generateQR(text) {
   return await QRCode.toBuffer(text, {
     errorCorrectionLevel: 'H',
     type: 'png',
-    width: 300,
-    margin: 2,
+    width: 3000,
+    margin: 10,
     color: {
       dark: '#000',
       light: '#fff'

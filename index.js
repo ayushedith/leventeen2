@@ -1,8 +1,8 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
-const QRCode = require('qrcode');
+const fs = require('fs');
+const path = require('path');
+const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
 
-// Setup
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -12,40 +12,73 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-const PREFIX = '!'; // Command prefix
+const PREFIX = '!';
+client.commands = new Collection();
 
-client.once('ready', () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
-  client.user.setActivity('QR codes | !qr', { type: 'LISTENING' });
+// 🧠 Global patch to disable reply ping
+client.on('messageCreate', (message) => {
+  const originalReply = message.reply.bind(message);
+  message.reply = (options) => {
+    if (typeof options === 'string') {
+      options = { content: options };
+    }
+    if (!options.allowedMentions) {
+      options.allowedMentions = { repliedUser: false };
+    }
+    return originalReply(options);
+  };
 });
 
-// Message listener
+// 🔁 Load command files
+const commandFiles = fs.readdirSync(path.join(__dirname, 'commands')).filter(file => file.endsWith('.js'));
+for (const file of commandFiles) {
+  const command = require(`./commands/${file}`);
+  client.commands.set(command.name, command);
+}
+
+client.once('ready', () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  client.user.setActivity('QRs | !help', { type: 'LISTENING' });
+});
+
 client.on('messageCreate', async (message) => {
-  if (message.author.bot) return; // Ignore bot messages
-  if (!message.content.startsWith(PREFIX)) return;
+  if (message.author.bot) return;
 
-  const [cmd, ...args] = message.content.slice(PREFIX.length).trim().split(/\s+/);
+  const isBoss = message.author.id === process.env.BOSS_ID;
+  const bossModeEnabled = process.env.BOSS_MODE?.toLowerCase() === 'true';
 
-  if (cmd === 'qr') {
-    const text = args.join(' ');
-    if (!text) return message.reply('❗ Please provide text to convert.');
+  const text = message.content.trim();
+
+  // 1️⃣ PREFIX commands
+  if (text.startsWith(PREFIX)) {
+    const args = text.slice(PREFIX.length).trim().split(/\s+/);
+    const commandName = args.shift().toLowerCase();
+    const command = client.commands.get(commandName);
+    if (!command) return;
 
     try {
-      const qrBuffer = await QRCode.toBuffer(text);
-      await message.reply({
-        files: [{ attachment: qrBuffer, name: 'qr.png' }]
-      });
+      await command.execute(message, args);
     } catch (err) {
-      console.error('❌ QR generation failed:', err);
-      message.reply('❌ Could not generate QR code.');
+      console.error(`❌ Error in !${commandName}:`, err);
+      message.reply('❌ Something went wrong.');
     }
   }
-   else if (cmd === 'ping') {
-    const sent = await message.reply('🏓 Pinging...');
-    const latency = sent.createdTimestamp - message.createdTimestamp;
-    const apiLatency = Math.round(client.ws.ping);
 
-    sent.edit(`🏓 Pong! Latency: ${latency}ms | API: ${apiLatency}ms`);
+  // 2️⃣ BOSS no-prefix commands
+  else if (isBoss && bossModeEnabled) {
+    const args = text.split(/\s+/);
+    const commandName = args.shift()?.toLowerCase();
+    if (!commandName || commandName.length < 2) return;
+
+    const command = client.commands.get(commandName);
+    if (!command) return;
+
+    try {
+      await command.execute(message, args);
+    } catch (err) {
+      console.error(`❌ Boss command failed (${commandName}):`, err);
+      message.reply('❌ Something went wrong.');
+    }
   }
 });
 

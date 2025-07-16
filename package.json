@@ -9,11 +9,10 @@
   },
   "author": "edith",
   "license": "ISC",
-
   "dependencies": {
-  "discord.js": "^14.13.0",
-  "dotenv": "^16.3.1",
-  "qrcode": "^1.5.1"
-}
-
+    "discord.js": "^14.13.0",
+    "dotenv": "^16.3.1",
+    "jimp": "^1.6.0",
+    "qrcode": "^1.5.4"
+  }
 }
