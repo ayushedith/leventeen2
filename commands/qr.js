@@ -1,58 +1,59 @@
 const QRCode = require('qrcode');
-const Jimp = require('jimp'); // works correctly in jimp@0.16.1
-const path = require('path');
+const Jimp = require('jimp');
+const { AttachmentBuilder } = require('discord.js');
 
 module.exports = {
   name: 'qr',
-  description: 'Generate a fancy QR code with a logo',
+  description: 'Generate a fancy QR code with optional customization',
   async execute(message, args) {
-    const text = args.join(' ');
-    if (!text) {
-      return message.reply('❗ Please provide some text or a URL.');
-    }
-
     try {
-      // Step 1: Generate QR code buffer
-      const qrBuffer = await QRCode.toBuffer(text, {
-        errorCorrectionLevel: 'H',
-        width: 512,
-        color: {
-          dark: '#000000',
-          light: '#ffffff00'
-        }
-      });
+      const input = args.join(' ');
+      const parts = input.split('|').map(part => part.trim());
 
-      // Step 2: Load QR into Jimp
-      const qrImage = await Jimp.read(qrBuffer);
+      const text = parts[0];
+      if (!text) return message.reply('❌ Please provide the text/URL to encode.');
 
-      // Step 3: Load local logo
-      const logoPath = path.join(__dirname, '..', 'assets', 'logo.png');
-      let logo;
-      try {
-        logo = await Jimp.read(logoPath);
-      } catch {
-        console.warn('⚠️ Logo not found. Sending plain QR.');
-        return message.reply({
-          files: [{ attachment: qrBuffer, name: 'qr.png' }]
-        });
+      let fg = '#000000';
+      let bg = '#ffffff';
+      let logoUrl = null;
+
+      for (let part of parts.slice(1)) {
+        if (part.startsWith('fg=')) fg = part.split('=')[1];
+        if (part.startsWith('bg=')) bg = part.split('=')[1];
+        if (part.startsWith('logo=')) logoUrl = part.split('=')[1];
       }
 
-      // Step 4: Resize and composite logo
-      const logoSize = qrImage.bitmap.width / 4;
-      logo.resize(logoSize, logoSize);
-      const x = (qrImage.bitmap.width - logo.bitmap.width) / 2;
-      const y = (qrImage.bitmap.height - logo.bitmap.height) / 2;
-      qrImage.composite(logo, x, y);
-
-      // Step 5: Send final image
-      const finalBuffer = await qrImage.getBufferAsync(Jimp.MIME_PNG);
-      return message.reply({
-        files: [{ attachment: finalBuffer, name: 'fancy-qr.png' }]
+      // Generate base QR
+      const qrBuffer = await QRCode.toBuffer(text, {
+        color: {
+          dark: fg,
+          light: bg,
+        },
+        width: 500,
+        margin: 2,
       });
 
+      let qrImage = await Jimp.read(qrBuffer);
+
+      // If logo provided, add to center
+      if (logoUrl) {
+        try {
+          const logo = await Jimp.read(logoUrl);
+          logo.resize(100, 100);
+          qrImage.composite(logo, (qrImage.bitmap.width - 100) / 2, (qrImage.bitmap.height - 100) / 2);
+        } catch (e) {
+          console.error('Logo Error:', e.message);
+          await message.reply('⚠️ Logo not added: Failed to load image.');
+        }
+      }
+
+      const finalBuffer = await qrImage.getBufferAsync(Jimp.MIME_PNG);
+      const attachment = new AttachmentBuilder(finalBuffer, { name: 'custom_qr.png' });
+      await message.reply({ content: '✅ Here is your custom QR:', files: [attachment], allowedMentions: { repliedUser: false } });
+
     } catch (err) {
-      console.error('❌ Fancy QR error:', err);
-      return message.reply('❌ Failed to generate fancy QR code.');
+      console.error('QR Error:', err);
+      await message.reply('❌ Failed to generate fancy QR code.');
     }
   }
 };
