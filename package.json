@@ -10,6 +10,8 @@
   "author": "edith",
   "license": "ISC",
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.74",
+    "axios": "^1.10.0",
     "discord.js": "^14.13.0",
     "dotenv": "^16.3.1",
     "jimp": "^0.16.1",
