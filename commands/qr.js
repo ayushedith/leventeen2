@@ -43,7 +43,7 @@ module.exports = {
           qrImage.composite(logo, (qrImage.bitmap.width - 100) / 2, (qrImage.bitmap.height - 100) / 2);
         } catch (e) {
           console.error('Logo Error:', e.message);
-          await message.reply('⚠️ Logo not added: Failed to load image.');
+          await message.reply('❌ Failed to load logo image. Please check the URL.');
         }
       }
 
